@@ -21,8 +21,8 @@ body. For example, a rectangle extruded 20 mm becomes a rectangular block.
 | Symmetric | Splits the entered total distance equally across the sketch plane. **10 mm** extends **5 mm on each side**. | Keep the sketch at the middle of a part. |
 | Two Sides | Sets a separate distance on each side. | The sketch is between two unequal extensions. |
 | Through All | Reaches through the target body. | Cut a hole that must stay open when the body becomes thicker. |
-| To Object | Stops at a selected target face, vertex or point. An offset can stop before or beyond that target. | Let the end follow another part of the design. |
-| Start | Starts at the sketch, at an offset from it, or from a selected object. | Leave a gap before the extrusion begins. |
+| To Object | Stops at a selected target face, vertex or point. A point of any visible sketch or a construction point is kept as a reference, so the end follows it when the design changes. An offset can stop before or beyond that target. | Let the end follow another part of the design. |
+| Start | Starts at the sketch, at an offset from it, or from a selected object. A point of any visible sketch or a construction point is kept as a reference, so the start follows it when the design changes. | Leave a gap before the extrusion begins. |
 | Taper Angle | Slopes the side walls. | Make drafted sides; reduce the angle if the profile's narrow details cannot support it. |
 | Operation | **New Body** makes a separate piece; **Join** adds material; **Cut** removes it; **Intersect** keeps only the overlap. | Choose the intended result explicitly when the automatic preview is not what you want. |
 | Target bodies | Chooses which existing bodies take part in a join, cut or intersection. | Several bodies lie in the extrusion's path. |

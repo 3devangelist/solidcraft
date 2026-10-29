@@ -304,6 +304,11 @@ pub struct Extent {
     /// To Object: end at the face (or vertex/point) at this point, instead of `distance`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to: Option<FacePick>,
+    /// To Object by reference: a sketch point or a construction point, found again on each
+    /// evaluation so the end follows it when the design changes; `to` is where it was when
+    /// picked, and is used when the reference no longer resolves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_ref: Option<GeoRef>,
     /// Offset past the To Object face (expression; negative stops short).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[walk(length = "To offset")]
@@ -312,6 +317,11 @@ pub struct Extent {
     /// `start_offset`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<FacePick>,
+    /// From Object by reference: a sketch point or a construction point, found again on each
+    /// evaluation so the start follows it when the design changes; `from` is where it was when
+    /// picked, and is used when the reference no longer resolves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_ref: Option<GeoRef>,
 }
 
 /// Thin Extrude: a wall of constant thickness along sketch curves instead of the profiles.
@@ -809,6 +819,11 @@ pub enum FeatureKind {
         /// To Object: drill down to the face (or point) here instead of `depth`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         to: Option<FacePick>,
+        /// To Object by reference: a sketch point or a construction point, found again on each
+        /// evaluation so the depth follows it when the design changes; `to` is where it was when
+        /// picked, and is used when the reference no longer resolves.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to_ref: Option<GeoRef>,
         /// Up to two straight edges of the face (#37): the hole's centre sits at each one's
         /// distance from its edge, measured in the face's plane, and follows the edges when the
         /// part changes. `position` keeps where it was placed.

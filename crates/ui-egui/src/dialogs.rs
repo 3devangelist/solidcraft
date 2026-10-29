@@ -1478,6 +1478,9 @@ impl Dialog {
         if let Some(target) = self.extrude_target(s, h) {
             return Some(target);
         }
+        if let Some(target) = self.point_ref_target(h) {
+            return Some(target);
+        }
         let inp = self.active_input()?;
         if self.takes_components() {
             return match h {
@@ -1550,12 +1553,50 @@ impl Dialog {
                 }
                 Sel::Vertex { body: String::new(), point: plane.origin }
             }
+            // A point of any visible sketch, or a construction point: kept as a reference, so
+            // the end follows the point when the design changes.
+            Hit::SketchPoint { sketch, id, .. } => Sel::ExternalSketchPoint { sketch: *sketch, id: id.clone() },
+            Hit::ConstructionPoint { name } => Sel::ConstructionPoint { name: name.clone() },
             _ if to_active => return None,
             Hit::Face { body, index, point } => Sel::Face { body: body.clone(), index: *index, point: *point },
             Hit::Vertex { body, point } => Sel::Vertex { body: body.clone(), point: *point },
             _ => return None,
         };
         object_target(s, &reference, &sel).then_some(sel)
+    }
+
+    /// Whether the active input is an extrude's To or From Object or a hole's To Object, which
+    /// takes a point of any visible sketch (see [`Dialog::extrude_target`] and
+    /// [`Dialog::point_ref_target`]): the viewport then offers those points although the input
+    /// does not take points itself.
+    pub(crate) fn takes_points_by_reference(&self) -> bool {
+        let Some(label) = self.active_input().map(|i| i.label) else { return false };
+        match self.kind {
+            Kind::Extrude { thin: false, .. } => label == TO_OBJECT || label == FROM_OBJECT,
+            Kind::Hole { .. } => label == TO_OBJECT,
+            _ => false,
+        }
+    }
+
+    /// A hole's active To Object input, or an extrude's From Object, takes a point of any visible
+    /// sketch or a construction point, kept as a reference so the bottom (the start) follows the
+    /// point when the design changes. (An extrude's To Object takes them in
+    /// [`Dialog::extrude_target`].)
+    fn point_ref_target(&self, h: &Hit) -> Option<Sel> {
+        let label = self.active_input()?.label;
+        let takes = match self.kind {
+            Kind::Hole { .. } => label == TO_OBJECT,
+            Kind::Extrude { thin: false, .. } => label == FROM_OBJECT,
+            _ => false,
+        };
+        if !takes {
+            return None;
+        }
+        match h {
+            Hit::SketchPoint { sketch, id, .. } => Some(Sel::ExternalSketchPoint { sketch: *sketch, id: id.clone() }),
+            Hit::ConstructionPoint { name } => Some(Sel::ConstructionPoint { name: name.clone() }),
+            _ => None,
+        }
     }
 
     /// Take a pick as the extrude's To Object (see [`Dialog::extrude_target`]): the extent turns to
@@ -2537,6 +2578,11 @@ pub(crate) fn selection_label(s: &Session, names: crate::prefs::OriginPlaneNames
         Sel::SketchPoint { id } => crate::sketch_modify_ui::point_id(s, item).unwrap_or(id).to_string(),
         Sel::Plane { name } => names.label(name).to_string(),
         Sel::Axis { name } | Sel::ConstructionPoint { name } | Sel::Body { name } => name.clone(),
+        // A point of another sketch (a To Object picked by reference): its sketch and its name.
+        Sel::ExternalSketchPoint { sketch, id } => match s.doc.feature(*sketch) {
+            Some(f) => format!("{} · {id}", f.name),
+            None => id.clone(),
+        },
         Sel::Face { body, index, .. } if axis => format!("{body} · face {index} axis"),
         Sel::Face { body, index, .. } => format!("{body} · face {index}"),
         Sel::Edge { body, .. } if axis => format!("{body} · circle axis"),
@@ -3582,18 +3628,63 @@ fn object_target(s: &Session, reference: &solidcraft_engine::geom::Plane, sel: &
                 .is_none_or(|face| reference.normal().dot(face.normal()).abs() < 1.0 - 1e-9 || reference.height(face.origin).abs() > TOLERANCE)
         }
         Sel::Vertex { point, .. } => reference.height(*point).abs() > TOLERANCE,
+        Sel::ExternalSketchPoint { .. } | Sel::ConstructionPoint { .. } => {
+            ref_point_position(s, sel).is_some_and(|point| reference.height(point).abs() > TOLERANCE)
+        }
         _ => false,
     }
 }
 
-/// The picked To Object place.
-fn to_object_point(inputs: &[SelInput]) -> Option<Value> {
-    object_point(inputs, TO_OBJECT)
+/// Where a sketch point (of any sketch) or a construction point picked as a To Object is now, in
+/// the world.
+pub(crate) fn ref_point_position(s: &Session, sel: &Sel) -> Option<Vec3> {
+    match sel {
+        Sel::ExternalSketchPoint { sketch, id } => {
+            let st = s.world_state();
+            let ss = st.sketch(*sketch)?;
+            let at = ss.sketch.point(ss.sketch.point_index(id)?)?;
+            Some(ss.plane.to_world(at))
+        }
+        Sel::ConstructionPoint { name } => solidcraft_engine::view::construction_points(s).into_iter().find(|(_, n, _)| n == name).map(|(_, _, p)| p),
+        _ => None,
+    }
 }
 
-pub(crate) fn object_point(inputs: &[SelInput], label: &str) -> Option<Value> {
+/// A To or From Object point kept by reference (`to_ref`, `from_ref`) comes back into the input
+/// `label` as that point, while it is there (else the stored place the input already holds stays).
+fn restore_point_ref(d: &mut Dialog, s: &Session, label: &str, point_ref: Option<&solidcraft_engine::doc::construct::GeoRef>) {
+    use solidcraft_engine::doc::construct::GeoRef;
+    let followed = match point_ref {
+        Some(GeoRef::SketchPoint { sketch, point }) => Some(Sel::ExternalSketchPoint { sketch: *sketch, id: point.clone() }),
+        Some(GeoRef::ConstructPoint { name }) => Some(Sel::ConstructionPoint { name: name.to_string() }),
+        _ => None,
+    };
+    if let Some(sel) = followed.filter(|sel| ref_point_position(s, sel).is_some())
+        && let Some(input) = d.inputs.iter_mut().find(|i| i.label == label)
+    {
+        input.items = vec![sel];
+    }
+}
+
+/// The reference a To or From Object point pick keeps (`to_ref`, `from_ref`): a sketch point or a
+/// construction point.
+fn object_ref(inputs: &[SelInput], label: &str) -> Option<Value> {
+    inputs.iter().find(|i| i.label == label)?.items.first().and_then(|x| match x {
+        Sel::ExternalSketchPoint { sketch, id } => Some(json!({"sketch": sketch, "point": id})),
+        Sel::ConstructionPoint { name } => Some(json!({"construct_point": name})),
+        _ => None,
+    })
+}
+
+/// The picked To Object place.
+fn to_object_point(s: &Session, inputs: &[SelInput]) -> Option<Value> {
+    object_point(s, inputs, TO_OBJECT)
+}
+
+pub(crate) fn object_point(s: &Session, inputs: &[SelInput], label: &str) -> Option<Value> {
     inputs.iter().find(|i| i.label == label)?.items.first().and_then(|x| match x {
         Sel::Face { point, .. } | Sel::Vertex { point, .. } | Sel::Edge { point, .. } => Some(pt(*point)),
+        Sel::ExternalSketchPoint { .. } | Sel::ConstructionPoint { .. } => ref_point_position(s, x).map(pt),
         _ => None,
     })
 }
@@ -4113,11 +4204,17 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
                 common["through_all"] = json!(true);
             }
             if to_object_on(&d.inputs) {
-                common["to"] = to_object_point(&d.inputs).ok_or("select the object to extrude to")?;
+                common["to"] = to_object_point(s, &d.inputs).ok_or("select the object to extrude to")?;
+                if let Some(r) = object_ref(&d.inputs, TO_OBJECT) {
+                    common["to_ref"] = r;
+                }
                 put(&mut common, &[("to_offset", to_offset)]);
             }
             if object_on(&d.inputs, FROM_OBJECT) {
-                common["from"] = object_point(&d.inputs, FROM_OBJECT).ok_or("select the object to extrude from")?;
+                common["from"] = object_point(s, &d.inputs, FROM_OBJECT).ok_or("select the object to extrude from")?;
+                if let Some(r) = object_ref(&d.inputs, FROM_OBJECT) {
+                    common["from_ref"] = r;
+                }
             }
             let with = |extra: Value| -> Value {
                 let mut p = common.clone();
@@ -4239,7 +4336,7 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
                 }
             }
             if to_object_on(&d.inputs) {
-                p["to"] = to_object_point(&d.inputs).ok_or("select the object to turn to")?;
+                p["to"] = to_object_point(s, &d.inputs).ok_or("select the object to turn to")?;
             }
             ("solid.revolve", p)
         }
@@ -4732,7 +4829,10 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
                 }
                 params["type"] = json!(ty);
                 if to_object_on(&d.inputs) {
-                    params["to"] = to_object_point(&d.inputs).ok_or("select the object to drill to")?;
+                    params["to"] = to_object_point(s, &d.inputs).ok_or("select the object to drill to")?;
+                    if let Some(r) = object_ref(&d.inputs, TO_OBJECT) {
+                        params["to_ref"] = r;
+                    }
                 } else if !opts.all {
                     params["depth"] = json!(depth);
                 }
@@ -5504,6 +5604,8 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
                     }
                 }
             }
+            restore_point_ref(&mut d, s, TO_OBJECT, extent.to_ref.as_ref());
+            restore_point_ref(&mut d, s, FROM_OBJECT, extent.from_ref.as_ref());
             if let Some(thin) = thin {
                 set_thin(&mut d.inputs, true);
                 if let Some(inp) = d.inputs.first_mut() {
@@ -5683,7 +5785,7 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
             d.extra.insert("pull".into(), pt3(pull.0));
             d
         }
-        FeatureKind::Hole { position, at, direction, diameter, depth, hole, points, thread, thread_depth, handedness, to, references } => {
+        FeatureKind::Hole { position, at, direction, diameter, depth, hole, points, thread, thread_depth, handedness, to, to_ref, references } => {
             let mut d = start("solid.hole")?;
             let mut k = hole_defaults(s);
             if let Kind::Hole { diameter: dia, depth: dep, kind, cb_diameter, cb_depth, cs_diameter, cs_angle, opts } = &mut k {
@@ -5772,6 +5874,7 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
                     opts.all = false;
                 }
                 with_to_object(&mut d, s, to.map(Vec3::from));
+                restore_point_ref(&mut d, s, TO_OBJECT, to_ref.as_ref());
             }
             // A hole at every point of a sketch.
             if points.as_ref().is_some_and(|sp| sp.ids.is_empty()) {

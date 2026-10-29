@@ -2279,6 +2279,18 @@ impl Model {
                 }
                 None => f,
             };
+            // To and From Object by reference (sketch or construction points): where they are now.
+            let followed;
+            let f = match with_ref_points(doc, &vals, &state, f) {
+                Some((g, notes)) => {
+                    for note in notes {
+                        append_warning(&mut warning, note);
+                    }
+                    followed = g;
+                    &followed
+                }
+                None => f,
+            };
             // A parameter with an error fails the features using it, with that error.
             let bad_param = param_names(f).into_iter().find_map(|n| self.param_errors.get(&n).map(|e| format!("parameter `{n}`: {e}")));
             let (r, mut boolean_diagnostics) = kernel::capture_boolean_diagnostics(|| match bad_param {
@@ -5112,7 +5124,9 @@ fn feature_tools_with_constructor(
             // The face names follow `face_points`: To, then From.
             let name = |k: usize| f.face_names.get(k).map(String::as_str);
             let (to_name, from_name) = if extent.to.is_some() { (name(0), name(1)) } else { (None, name(0)) };
-            let to_face = extent.to.and_then(|p| object_face(&tst, to_name, p.0, Some(n)));
+            // A point kept by reference (`to_ref`) is a place, not a face: the end stops level with
+            // it, along the normal, whatever face it happens to lie on.
+            let to_face = extent.to.filter(|_| extent.to_ref.is_none()).and_then(|p| object_face(&tst, to_name, p.0, Some(n)));
             // The body the extent runs to: a Join to it joins that body too (#6424).
             *to_body = to_face.and_then(|(bi, _)| tst.bodies.get(bi)).map(|b| b.name.clone());
             let centre = {
@@ -5120,8 +5134,12 @@ fn feature_tools_with_constructor(
                 let c = pts.iter().fold(Vec2::default(), |a, p| a + *p) * (1.0 / pts.len().max(1) as f64);
                 ss.plane.to_world(c)
             };
+            // A From point kept by reference (`from_ref`) is a place too: its level along the normal.
             let from = match extent.from {
-                Some(p) => height_at(&tst, object_face(&tst, from_name, p.0, Some(n)), &ss.plane, centre, p.0),
+                Some(p) => {
+                    let from_face = if extent.from_ref.is_some() { None } else { object_face(&tst, from_name, p.0, Some(n)) };
+                    height_at(&tst, from_face, &ss.plane, centre, p.0)
+                }
                 None => 0.0,
             };
             let d = match extent.to {
@@ -6438,6 +6456,43 @@ fn copied_features(doc: &Document, vals: &BTreeMap<String, Value>, st: &ModelSta
         }
         _ => Ok(None),
     }
+}
+
+/// `f` with its To Object point (an extrude's or a hole's) and its From Object point (an
+/// extrude's) moved to where their references (`to_ref`, `from_ref`: a sketch point or a
+/// construction point) are in `state` now, and a note for each reference that no longer resolves
+/// (its point stays where it was picked). `None` when `f` has no such reference.
+fn with_ref_points(doc: &Document, vals: &BTreeMap<String, Value>, state: &ModelState, f: &Feature) -> Option<(Feature, Vec<String>)> {
+    let (to_ref, from_ref) = match &f.kind {
+        FeatureKind::Extrude { extent, .. } => (extent.to_ref.clone(), extent.from_ref.clone()),
+        FeatureKind::Hole { to_ref, .. } => (to_ref.clone(), None),
+        _ => return None,
+    };
+    if to_ref.is_none() && from_ref.is_none() {
+        return None;
+    }
+    let st = construction_state(doc, state, f.component);
+    let ctx = crate::construct::Ctx { doc, vals, st: &st, depth: 0 };
+    let mut g = f.clone();
+    let mut notes = Vec::new();
+    for (r, is_from) in [(to_ref, false), (from_ref, true)] {
+        let Some(r) = r else { continue };
+        let resolved = crate::construct::point(&ctx, &r);
+        let slot = match &mut g.kind {
+            FeatureKind::Extrude { extent, .. } if is_from => &mut extent.from,
+            FeatureKind::Extrude { extent, .. } => &mut extent.to,
+            FeatureKind::Hole { to, .. } => to,
+            _ => return None,
+        };
+        match resolved {
+            Ok(p) => *slot = Some(crate::FacePick(p)),
+            Err(e) => {
+                let what = if is_from { "From" } else { "To" };
+                notes.push(format!("{what} Object point: {e}; using the position where it was picked"));
+            }
+        }
+    }
+    Some((g, notes))
 }
 
 /// The copies a pattern or mirror of `features` at `mats` makes, source by source: the source

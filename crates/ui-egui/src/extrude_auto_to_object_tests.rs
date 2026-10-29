@@ -209,3 +209,104 @@ fn manual_to_object_accepts_a_parallel_plane_with_automatic_switching_off() {
     assert_eq!(commands[0].1["to"], json!([0.0, 0.0, 25.0]));
     assert!((solidcraft_engine::extrude_reach(&h.app.session, &commands[0].1).unwrap() - 25.0).abs() < 1e-9);
 }
+
+/// A point of another sketch (or a construction point) is a To Object picked by reference: the
+/// command keeps it as `to_ref`, and the end follows the point when its sketch changes.
+#[test]
+fn manual_to_object_takes_a_point_of_another_sketch_by_reference() {
+    let mut h = scene_with(false);
+    h.app.run("sketch.create", json!({"plane": "XZ", "name": "Marks"})).unwrap();
+    let made = h.app.run("sketch.point", json!({"point": [5, 30]})).unwrap();
+    let point = made["created"]["points"][0].as_str().unwrap().to_string();
+    h.app.run("sketch.finish", json!({})).unwrap();
+    let marks = h.app.session.doc.find_feature("Marks").unwrap().id;
+    // The extrude dialog again (the sketch closed the first one).
+    let base = h.app.session.doc.find_feature("Base").unwrap().id;
+    h.app.start("solid.extrude");
+    h.frames(2);
+    let d = h.app.dialog.as_mut().unwrap();
+    d.inputs[0].items = vec![Sel::Profile { sketch: base, index: 0 }];
+    d.active = 0;
+    h.frames(2);
+    h.step(&json!({"click": {"handle": "dialog:Extent Type"}})).unwrap();
+    h.step(&json!({"click": {"handle": "dialog:Extent Type:To Object"}})).unwrap();
+    let at = {
+        let st = h.app.session.world_state();
+        let ss = st.sketch(marks).unwrap();
+        ss.sketch.point(ss.sketch.point_index(&point).unwrap()).unwrap()
+    };
+    assert!(click(&mut h, |_| Hit::SketchPoint { sketch: marks, id: point.clone(), at }));
+    assert_eq!(to_object(dialog(&h)), Some(&Sel::ExternalSketchPoint { sketch: marks, id: point.clone() }));
+    let commands = apply_commands(&h.app, dialog(&h)).unwrap();
+    assert_eq!(commands[0].1["to_ref"], json!({"sketch": marks, "point": point}));
+    let reach = solidcraft_engine::extrude_reach(&h.app.session, &commands[0].1).unwrap();
+    assert!((reach.abs() - 30.0).abs() < 1e-9, "{reach}");
+}
+
+/// The same pick made by a real click on the canvas: the viewport offers points of other visible
+/// sketches while the To Object input is active, although that input does not take points.
+#[test]
+fn manual_to_object_click_on_the_canvas_takes_a_point_of_another_sketch() {
+    let mut h = scene_with(false);
+    h.app.run("sketch.create", json!({"plane": "XZ", "name": "Marks"})).unwrap();
+    let made = h.app.run("sketch.point", json!({"point": [5, 30]})).unwrap();
+    let point = made["created"]["points"][0].as_str().unwrap().to_string();
+    h.app.run("sketch.finish", json!({})).unwrap();
+    let marks = h.app.session.doc.find_feature("Marks").unwrap().id;
+    let base = h.app.session.doc.find_feature("Base").unwrap().id;
+    h.app.start("solid.extrude");
+    h.frames(2);
+    let d = h.app.dialog.as_mut().unwrap();
+    d.inputs[0].items = vec![Sel::Profile { sketch: base, index: 0 }];
+    d.active = 0;
+    h.frames(2);
+    h.step(&json!({"click": {"handle": "dialog:Extent Type"}})).unwrap();
+    h.step(&json!({"click": {"handle": "dialog:Extent Type:To Object"}})).unwrap();
+    let world = {
+        let st = h.app.session.world_state();
+        let ss = st.sketch(marks).unwrap();
+        ss.plane.to_world(ss.sketch.point(ss.sketch.point_index(&point).unwrap()).unwrap())
+    };
+    h.step(&json!({"click": {"world": [world.x, world.y, world.z]}})).unwrap();
+    h.frames(2);
+    let d = dialog(&h);
+    let picked = Sel::ExternalSketchPoint { sketch: marks, id: point.clone() };
+    assert_eq!(to_object(d), Some(&picked));
+    // The chip names the point by its sketch and its own name.
+    let input = d.inputs.iter().find(|i| i.label == "To Object").unwrap();
+    let label = crate::dialogs::selection_label(&h.app.session, Default::default(), d, input, &picked);
+    assert_eq!(label, format!("Marks · {point}"));
+}
+
+/// The Start's From Object takes a point of another sketch the same way: a click on the canvas
+/// picks it, and the command keeps it as `from_ref`.
+#[test]
+fn from_object_click_on_the_canvas_takes_a_point_of_another_sketch() {
+    let mut h = scene_with(false);
+    h.app.run("sketch.create", json!({"plane": "XZ", "name": "Marks"})).unwrap();
+    let made = h.app.run("sketch.point", json!({"point": [5, 4]})).unwrap();
+    let point = made["created"]["points"][0].as_str().unwrap().to_string();
+    h.app.run("sketch.finish", json!({})).unwrap();
+    let marks = h.app.session.doc.find_feature("Marks").unwrap().id;
+    let base = h.app.session.doc.find_feature("Base").unwrap().id;
+    h.app.start("solid.extrude");
+    h.frames(2);
+    let d = h.app.dialog.as_mut().unwrap();
+    d.inputs[0].items = vec![Sel::Profile { sketch: base, index: 0 }];
+    // Start: From Object, as the Start choice opens it (the Advanced rows are folded here).
+    d.inputs.push(crate::selection::SelInput::new("From Object", crate::selection::FACES | crate::selection::VERTICES, false));
+    d.active = d.inputs.len() - 1;
+    h.frames(2);
+    let world = {
+        let st = h.app.session.world_state();
+        let ss = st.sketch(marks).unwrap();
+        ss.plane.to_world(ss.sketch.point(ss.sketch.point_index(&point).unwrap()).unwrap())
+    };
+    h.step(&json!({"click": {"world": [world.x, world.y, world.z]}})).unwrap();
+    h.frames(2);
+    let d = dialog(&h);
+    let from = d.inputs.iter().find(|i| i.label == "From Object").and_then(|i| i.items.first());
+    assert_eq!(from, Some(&Sel::ExternalSketchPoint { sketch: marks, id: point.clone() }));
+    let commands = apply_commands(&h.app, d).unwrap();
+    assert_eq!(commands[0].1["from_ref"], json!({"sketch": marks, "point": point}));
+}

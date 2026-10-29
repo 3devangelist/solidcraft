@@ -2387,7 +2387,12 @@ fn pick_hits(app: &SolveApp, proj: &Proj, pos: Pos2, other_sketch_points: bool, 
     }
     // Sketch points of the active sketch (of every shown sketch while a command takes points,
     // while idle or projecting, and while 3D drawing snaps to points on other visible sketches).
-    let wants_points = app.dialog.as_ref().and_then(|d| d.active_input()).is_some_and(|i| i.accept & crate::selection::POINTS != 0);
+    // An extrude's To or From Object and a hole's To Object take them too (a point of another
+    // sketch, by reference).
+    let wants_points = app
+        .dialog
+        .as_ref()
+        .is_some_and(|d| d.active_input().is_some_and(|i| i.accept & crate::selection::POINTS != 0) || d.takes_points_by_reference());
     let external_points =
         wants_points || other_sketch_points || (app.dialog.is_none() && app.tool.as_ref().is_none_or(|tool| tool.cmd == "sketch.project"));
     let point_sketches: Vec<u64> = if crate::render_workspace::active(app) {

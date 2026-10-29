@@ -30,6 +30,7 @@ fn schemas_and_the_key_check_agree() {
             "face_body",
             "faces",
             "from",
+            "from_ref",
             "name",
             "operation",
             "participants",
@@ -45,6 +46,7 @@ fn schemas_and_the_key_check_agree() {
             "through_all",
             "to",
             "to_offset",
+            "to_ref",
         ],
     );
     assert_keys(

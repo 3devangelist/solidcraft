@@ -73,6 +73,13 @@ for walls of straight lines or of whole circles. A wall thicker than the
 radius of a curve it follows on the inside is refused. Spline walls follow the exact offset
 within 0.0001 mm.
 
+An Extrude's or a Hole's To Object, and an Extrude's From Object, can be a point of any visible
+sketch or a construction point: it is kept as a reference, so the end of the extrusion (the bottom
+of a blind or tapped hole, the start of the extrusion) follows the point when parameters or
+sketches change. Such a point counts only by its distance from the sketch plane, along its
+normal, whatever face it lies on. If the point is deleted, the feature stays at the place where
+it was picked and shows a warning.
+
 Editing an extrusion retains its signed distances, From/To Object inputs, taper expressions
 and explicit body targets. Revolve edits retain world, sketch, explicit-line and model-edge or face axes, both
 angle expressions and To Object targets. An unchanged **All profiles** selection continues

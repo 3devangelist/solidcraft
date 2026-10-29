@@ -124,6 +124,10 @@ pub struct ExtrudeParams {
     #[serde(default, deserialize_with = "present")]
     #[schemars(with = "ToPoint")]
     pub to: Option<ToPoint>,
+    /// With `to`: the sketch point or construction point `to` is, kept by reference so the end
+    /// follows it on every recompute (`to` being where it is now).
+    #[serde(default)]
+    pub to_ref: Option<PointRefParam>,
     /// How far past `to` to go.
     #[serde(default)]
     pub to_offset: Option<LengthExpr>,
@@ -131,6 +135,10 @@ pub struct ExtrudeParams {
     #[serde(default, deserialize_with = "present")]
     #[schemars(with = "FromPoint")]
     pub from: Option<FromPoint>,
+    /// With `from`: the sketch point or construction point `from` is, kept by reference so the
+    /// start follows it on every recompute (`from` being where it is now).
+    #[serde(default)]
+    pub from_ref: Option<PointRefParam>,
     /// How the extrusion combines with existing bodies. Default: new.
     #[serde(default)]
     pub operation: Option<ExtrudeOperation>,
@@ -167,6 +175,17 @@ pub struct ExtrudeParams {
     /// With `thin` and `side: two_sides`: the thickness outside.
     #[serde(default)]
     pub thickness2: Option<LengthExpr>,
+}
+
+/// A point an extent keeps by reference (`to_ref`, `from_ref`): a point of a sketch, or a
+/// construction point by name.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum PointRefParam {
+    /// A sketch's point: the sketch by id or name, the point by its id in that sketch.
+    SketchPoint { sketch: IdOrName, point: String },
+    /// A construction point, by name.
+    ConstructPoint { construct_point: String },
 }
 
 /// Add a cylinder primitive.

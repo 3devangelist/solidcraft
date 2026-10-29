@@ -2957,3 +2957,27 @@ fn construction_points_fill_three_point_plane_dialog() {
     assert!((planes[0].2.origin.z - 10.0).abs() < 1e-9);
     assert!(planes[0].2.normal().dot(Vec3::Z).abs() > 1.0 - 1e-9);
 }
+
+/// Hole To Object on a point of another sketch: the pick keeps the point, and the command sends it
+/// as `to_ref` with where it is now as `to` (a blind tapped hole whose depth follows the point).
+#[test]
+fn hole_to_object_takes_a_sketch_point_by_reference() {
+    let mut app = boxed();
+    app.run("sketch.create", json!({"plane": "YZ", "name": "Bottoms"})).unwrap();
+    let made = app.run("sketch.point", json!({"point": [15, 12]})).unwrap();
+    let point = made["created"]["points"][0].as_str().unwrap().to_string();
+    app.run("sketch.finish", json!({})).unwrap();
+    let bottoms = app.session.doc.find_feature("Bottoms").unwrap().id;
+    app.dialog = None;
+    let top = face(&app, Vec3::new(20.0, 15.0, 20.0));
+    let mut d = start(&mut app, vec![top], "solid.hole");
+    d.inputs.push(crate::selection::SelInput::new("To Object", crate::selection::FACES | crate::selection::VERTICES, false));
+    d.active = d.inputs.len() - 1;
+    let hit = crate::viewport::Hit::SketchPoint { sketch: bottoms, id: point.clone(), at: solidcraft_engine::geom::Vec2::new(15.0, 12.0) };
+    let sel = d.candidate(&app.session, &hit).expect("a sketch point is a To Object");
+    assert_eq!(sel, Sel::ExternalSketchPoint { sketch: bottoms, id: point.clone() });
+    d.pick(&app.session, sel);
+    let p = apply_commands(&app, &d).unwrap().remove(0).1;
+    assert_eq!(p["to_ref"], json!({"sketch": bottoms, "point": point}), "{p}");
+    assert_eq!(p["to"], json!([0.0, 15.0, 12.0]), "{p}");
+}
