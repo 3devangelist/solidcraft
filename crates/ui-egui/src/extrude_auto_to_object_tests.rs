@@ -293,9 +293,11 @@ fn from_object_click_on_the_canvas_takes_a_point_of_another_sketch() {
     h.frames(2);
     let d = h.app.dialog.as_mut().unwrap();
     d.inputs[0].items = vec![Sel::Profile { sketch: base, index: 0 }];
-    // Start: From Object, as the Start choice opens it (the Advanced rows are folded here).
-    d.inputs.push(crate::selection::SelInput::new("From Object", crate::selection::FACES | crate::selection::VERTICES, false));
-    d.active = d.inputs.len() - 1;
+    // Start: From Object, as a user picks it: the Start row sits in the folded Advanced section.
+    h.step(&json!({"click": {"handle": "dialog:section:Advanced"}})).unwrap();
+    h.frames(2);
+    h.step(&json!({"click": {"handle": "dialog:Start"}})).unwrap();
+    h.step(&json!({"click": {"handle": "dialog:Start:From Object"}})).unwrap();
     h.frames(2);
     let world = {
         let st = h.app.session.world_state();

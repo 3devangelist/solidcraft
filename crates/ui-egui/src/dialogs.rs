@@ -1555,8 +1555,7 @@ impl Dialog {
             }
             // A point of any visible sketch, or a construction point: kept as a reference, so
             // the end follows the point when the design changes.
-            Hit::SketchPoint { sketch, id, .. } => Sel::ExternalSketchPoint { sketch: *sketch, id: id.clone() },
-            Hit::ConstructionPoint { name } => Sel::ConstructionPoint { name: name.clone() },
+            Hit::SketchPoint { .. } | Hit::ConstructionPoint { .. } => point_ref_sel(h)?,
             _ if to_active => return None,
             Hit::Face { body, index, point } => Sel::Face { body: body.clone(), index: *index, point: *point },
             Hit::Vertex { body, point } => Sel::Vertex { body: body.clone(), point: *point },
@@ -1580,23 +1579,15 @@ impl Dialog {
 
     /// A hole's active To Object input, or an extrude's From Object, takes a point of any visible
     /// sketch or a construction point, kept as a reference so the bottom (the start) follows the
-    /// point when the design changes. (An extrude's To Object takes them in
-    /// [`Dialog::extrude_target`].)
+    /// point when the design changes. The inputs are those of
+    /// [`Dialog::takes_points_by_reference`], except an extrude's To Object, which takes them in
+    /// [`Dialog::extrude_target`] (that also checks the point is a target).
     fn point_ref_target(&self, h: &Hit) -> Option<Sel> {
-        let label = self.active_input()?.label;
-        let takes = match self.kind {
-            Kind::Hole { .. } => label == TO_OBJECT,
-            Kind::Extrude { thin: false, .. } => label == FROM_OBJECT,
-            _ => false,
-        };
-        if !takes {
+        let extrude_to = matches!(self.kind, Kind::Extrude { .. }) && self.active_input()?.label == TO_OBJECT;
+        if !self.takes_points_by_reference() || extrude_to {
             return None;
         }
-        match h {
-            Hit::SketchPoint { sketch, id, .. } => Some(Sel::ExternalSketchPoint { sketch: *sketch, id: id.clone() }),
-            Hit::ConstructionPoint { name } => Some(Sel::ConstructionPoint { name: name.clone() }),
-            _ => None,
-        }
+        point_ref_sel(h)
     }
 
     /// Take a pick as the extrude's To Object (see [`Dialog::extrude_target`]): the extent turns to
@@ -3652,6 +3643,16 @@ pub(crate) fn ref_point_position(s: &Session, sel: &Sel) -> Option<Vec3> {
 
 /// A To or From Object point kept by reference (`to_ref`, `from_ref`) comes back into the input
 /// `label` as that point, while it is there (else the stored place the input already holds stays).
+/// A point of any visible sketch, or a construction point, as a reference: the one place a pick
+/// becomes a point reference (for [`Dialog::extrude_target`] and [`Dialog::point_ref_target`]).
+fn point_ref_sel(h: &Hit) -> Option<Sel> {
+    match h {
+        Hit::SketchPoint { sketch, id, .. } => Some(Sel::ExternalSketchPoint { sketch: *sketch, id: id.clone() }),
+        Hit::ConstructionPoint { name } => Some(Sel::ConstructionPoint { name: name.clone() }),
+        _ => None,
+    }
+}
+
 fn restore_point_ref(d: &mut Dialog, s: &Session, label: &str, point_ref: Option<&solidcraft_engine::doc::construct::GeoRef>) {
     use solidcraft_engine::doc::construct::GeoRef;
     let followed = match point_ref {

@@ -206,7 +206,8 @@ fn reference_height(app: &SolveApp, d: &Dialog, label: &str, plane: &solidcraft_
     let p = point.as_array()?;
     let p = Vec3::new(p.first()?.as_f64()?, p.get(1)?.as_f64()?, p.get(2)?.as_f64()?);
     // A sketch or construction point is a place, not a face: its distance along the sketch
-    // plane's normal, whatever face it lies on (as the extrude itself measures it).
+    // plane's normal, whatever face it lies on (as the extrude itself measures it: `to_ref` and
+    // `from_ref` in `crates/doc/src/eval.rs` skip the face lookup the same way).
     let by_reference = d
         .inputs
         .iter()
