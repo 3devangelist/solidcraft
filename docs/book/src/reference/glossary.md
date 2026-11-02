@@ -324,6 +324,23 @@ The first instance is the original.
 - **Elsewhere:** instance, element, occurrence.
 - **For translators:** not an occurrence of a component.
 
+### point reference
+
+A sketch point or construction point that an extrude's To or From Object, or a hole's To Object,
+keeps and finds again on every recompute, so the end, the start or the hole's bottom follows it.
+
+Only the point's distance from the sketch plane, along its normal, counts, whatever face it lies
+on. The place where the point was picked is kept too, and is used, with a warning, when the point
+no longer exists.
+
+- **In SolidCraft:** the `to_ref` parameter of `solid.extrude` and `solid.hole` and the `from_ref`
+  parameter of `solid.extrude` (each `{sketch, point}` or `{construct_point}`); the same keys in
+  the design file, beside `to` and `from`.
+- **Don't use:** linked point, associative point, anchor point.
+- **Elsewhere:** reference point, associative reference.
+- **For translators:** a point the feature follows, not a *reference edge* and not a construction
+  point on its own.
+
 ### reference edge
 
 A straight edge of a flat face that a Single hole's centre or a cylinder's base centre keeps a
@@ -451,6 +468,7 @@ share a catalogue entry. Each meaning below gets its own term and, in time, its 
 | Quantity | the number of pattern instances | count | the pattern dialogs' Quantity rows, `ui.quantity` |
 | | what the motion plot shows: value, velocity or acceleration | plotted quantity | the motion study's Quantity row, `motion.plot_quantity` |
 | Reference | an edge a hole or cylinder keeps its distance from | *reference edge* | `references` of `solid.hole` and `solid.cylinder`, `ui.reference_1` |
+| | a point an extrude's or a hole's To or From Object follows | *point reference* | `to_ref`, `from_ref` of `solid.extrude` and `solid.hole` |
 | | the measured values a material is checked against | reference (material) | `material.editor.reference` |
 | | the distance a light's intensity is given for | reference distance (light) | `render.cpu_light_reference` |
 

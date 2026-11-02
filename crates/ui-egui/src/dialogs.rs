@@ -3641,8 +3641,6 @@ pub(crate) fn ref_point_position(s: &Session, sel: &Sel) -> Option<Vec3> {
     }
 }
 
-/// A To or From Object point kept by reference (`to_ref`, `from_ref`) comes back into the input
-/// `label` as that point, while it is there (else the stored place the input already holds stays).
 /// A point of any visible sketch, or a construction point, as a reference: the one place a pick
 /// becomes a point reference (for [`Dialog::extrude_target`] and [`Dialog::point_ref_target`]).
 fn point_ref_sel(h: &Hit) -> Option<Sel> {
@@ -3653,6 +3651,8 @@ fn point_ref_sel(h: &Hit) -> Option<Sel> {
     }
 }
 
+/// A To or From Object point kept by reference (`to_ref`, `from_ref`) comes back into the input
+/// `label` as that point, while it is there (else the stored place the input already holds stays).
 fn restore_point_ref(d: &mut Dialog, s: &Session, label: &str, point_ref: Option<&solidcraft_engine::doc::construct::GeoRef>) {
     use solidcraft_engine::doc::construct::GeoRef;
     let followed = match point_ref {
